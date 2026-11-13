@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TF</title>
+</head>
+<body class="vscode-body vscode-light">
+<div style="text-align: justify">
+<h1 id="fundamentos-de-redes-de-computadores">Fundamentos de Redes de Computadores</h1>
+<p><img src="https://www.politecnica.pucrs.br/bs/imgs/escola-politecnica.png" width="385"></p>
+<h1 id="trabalho-final-roteador-de-estado-de-enlace-sobre-udp">Trabalho Final -- Roteador de estado de enlace sobre UDP</h1>
+<p>O trabalho consiste em implementar um <strong>roteador de estado de enlace</strong>, inspirado no OSPF, executando como uma aplicação sobre UDP.
+Cada integrante do grupo executa uma instância do roteador em sua máquina, e as instâncias formam juntas uma <strong>rede virtual</strong> sobre uma rede local real: as máquinas virtuais da VDI ou notebooks conectados a um access point (ver <a href="#ambiente-de-execução">Ambiente de execução</a>).</p>
+<p>Cada roteador descobre seus vizinhos por meio de mensagens <strong>HELLO</strong>, gera e <strong>inunda LSPs</strong> (<em>Link State Packets</em>), monta a base de estados de enlace (LSDB) com a topologia completa da rede virtual e calcula sua tabela de roteamento com o <strong>algoritmo de Dijkstra</strong>.
+Sobre essa tabela, o roteador <strong>encaminha datagramas</strong> com controle de <strong>TTL</strong> e implementa um subconjunto do <strong>ICMP</strong>: <code>ping</code>, tempo excedido e destino inalcançável.</p>
+<blockquote>
+<p><strong>Atenção:</strong> o formato dos pacotes e as regras de processamento devem ser seguidos fielmente. Durante a apresentação, a rede do grupo será <strong>conectada à rede de outro grupo</strong>, e os roteadores das duas implementações devem funcionar juntos.</p>
+</blockquote>
+<hr />
+<h2 id="endereçamento-virtual">Endereçamento virtual</h2>
+<p>Cada grupo no Moodle recebe um número <strong>G</strong>, e cada roteador do grupo deve definir um número <strong>R</strong> (1, 2, 3...). O roteador R do grupo G:</p>
+<ul>
+<li>tem o endereço virtual <strong><code>10.G.R.1</code></strong>;</li>
+<li>é responsável pela rede <strong><code>10.G.R.0/24</code></strong>: qualquer datagrama destinado a um endereço dessa rede é entregue a esse roteador.</li>
+</ul>
+<p>Exemplo: no grupo 7, os endereços virtuais dos roteadores são <code>10.7.1.1</code>, <code>10.7.2.1</code>, <code>10.7.3.1</code> e <code>10.7.4.1</code>. Com isso, os endereços virtuais continuam únicos quando as redes de dois grupos são conectadas.</p>
+<p>Os endereços virtuais existem apenas dentro do trabalho. A comunicação real entre as máquinas usa os endereços IP reais delas na rede local.</p>
+<hr />
+<h2 id="vizinhos-enlaces-e-arquivo-de-configuração">Vizinhos, enlaces e arquivo de configuração</h2>
+<p>Cada roteador conhece apenas seus <strong>vizinhos</strong>, isto é, os roteadores com os quais tem um <strong>enlace</strong> direto. Essa informação vem de um <strong>arquivo de configuração</strong>, lido ao iniciar o roteador. O formato do arquivo fica a critério do grupo, desde que contenha:</p>
+<ul>
+<li>o <strong>endereço virtual</strong> do roteador (<code>10.G.R.1</code>);</li>
+<li>a <strong>porta UDP local</strong> em que o roteador envia e recebe pacotes (padrão: <strong>6000</strong>);</li>
+<li>a lista de <strong>vizinhos</strong>, cada um com <strong>endereço IP real</strong>, <strong>porta UDP</strong> e <strong>custo do enlace</strong> (inteiro positivo).</li>
+</ul>
+<p>Um enlace existe quando os dois roteadores listam um ao outro como vizinho, e os dois lados devem configurar o mesmo custo. As rotas escolhidas são as de menor soma de custos.</p>
+<p>O arquivo diz apenas onde cada vizinho <em>pode</em> estar. Se ele está de fato em funcionamento, o roteador descobre pelas mensagens HELLO, descritas a seguir.</p>
+<hr />
+<h2 id="funcionamento-do-roteador">Funcionamento do roteador</h2>
+<p>Esta seção descreve o comportamento do roteador. O formato exato de cada pacote está em <a href="#formato-dos-pacotes">Formato dos pacotes</a>.</p>
+<h3 id="vizinhança">Vizinhança</h3>
+<p>O HELLO (<a href="#hello">formato</a>) tem três funções:</p>
+<ol>
+<li><strong>Indicar que o vizinho configurado está de fato em funcionamento.</strong> Um vizinho em funcionamento é chamado de <strong>ativo</strong>, e somente vizinhos ativos entram no LSP (descrito na próxima seção).</li>
+<li><strong>Detectar a falha de um vizinho.</strong> O UDP não tem conexão, e a ausência de HELLO é a única indicação de que o vizinho caiu.</li>
+<li><strong>Informar o endereço virtual do vizinho</strong>, associando-o ao par (IP real, porta) de onde o HELLO veio.</li>
+</ol>
+<p>Regras:</p>
+<ul>
+<li>O roteador envia <strong>HELLO a cada 5 segundos</strong> para todos os vizinhos configurados (IP real e porta do arquivo de configuração).</li>
+<li>Um vizinho passa a ser <strong>ativo</strong> quando o primeiro HELLO dele é recebido. O roteador associa o <strong>endereço virtual</strong> informado no HELLO ao par <strong>(IP real, porta)</strong> de onde o pacote veio; essa associação é usada para enviar pacotes a esse vizinho.</li>
+<li>Um vizinho que fica <strong>20 segundos</strong> (4 períodos) sem enviar HELLO é considerado <strong>inativo</strong>.</li>
+</ul>
+<p>Toda mudança na lista de vizinhos ativos (entrada ou saída) gera <strong>imediatamente</strong> um novo LSP.</p>
+<h3 id="lsps-e-inundação">LSPs e inundação</h3>
+<p>O LSP (<a href="#lsp">formato</a>) descreve os vizinhos ativos de um roteador e o custo de cada enlace. Inundando os LSPs, todos os roteadores passam a ter a mesma LSDB, isto é, a topologia completa da rede virtual.</p>
+<h4 id="geração">Geração</h4>
+<p>O roteador gera um novo LSP próprio:</p>
+<ul>
+<li>quando um vizinho se torna ativo ou inativo;</li>
+<li>periodicamente, a cada <strong>30 segundos</strong> (renovação), mesmo sem mudança.</li>
+</ul>
+<p>Cada roteador mantém <strong>seu próprio número de sequência</strong>, usado apenas nos LSPs que ele gera; ao reenviar o LSP de outro roteador, o número de sequência não é alterado. O número do primeiro LSP é o <strong>horário atual em segundos</strong> (Unix time), e cada novo LSP incrementa o número em 1. Com isso, um roteador que é reiniciado continua gerando números maiores do que os que os outros roteadores já conhecem.</p>
+<p>O LSP próprio é enviado a todos os vizinhos ativos e armazenado na própria LSDB.</p>
+<h4 id="recebimento">Recebimento</h4>
+<p>Ao receber um LSP do vizinho V:</p>
+<ol>
+<li>Se a origem do LSP é o próprio roteador: descartar.</li>
+<li>Se a LSDB já possui um LSP dessa origem com número de sequência <strong>maior ou igual</strong>: descartar (é uma cópia ou um LSP antigo).</li>
+<li>Caso contrário: substituir o LSP armazenado, <strong>reenviar uma cópia a todos os vizinhos ativos, exceto V</strong>, e recalcular a tabela de roteamento.</li>
+</ol>
+<h4 id="sincronização-com-novo-vizinho">Sincronização com novo vizinho</h4>
+<p>Quando um vizinho se torna ativo, além do novo LSP próprio, o roteador envia <strong>a ele</strong> uma cópia de <strong>todos os LSPs da sua LSDB</strong>.
+Sem isso, um roteador que entra na rede só conheceria os outros roteadores na próxima renovação.</p>
+<h4 id="envelhecimento">Envelhecimento</h4>
+<p>Um LSP de outro roteador que não é renovado por <strong>90 segundos</strong> é removido da LSDB, e a tabela é recalculada.
+Isso remove da LSDB os roteadores que saíram da rede.</p>
+<h3 id="cálculo-da-tabela-de-roteamento">Cálculo da tabela de roteamento</h3>
+<p>A LSDB define um grafo: cada LSP de origem O contém as arestas de O para cada vizinho listado, com o custo indicado.
+O roteador executa o <strong>algoritmo de Dijkstra</strong> a partir de si mesmo e, para cada roteador alcançável R, registra na tabela:</p>
+<table>
+<thead>
+<tr>
+<th>Rede de destino</th>
+<th>Próximo salto</th>
+<th style="text-align: right;">Custo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rede de R (ex.: <code>10.G.R.0/24</code>)</td>
+<td>endereço virtual do vizinho pelo qual começa o caminho de menor custo</td>
+<td style="text-align: right;">soma dos custos</td>
+</tr>
+</tbody>
+</table>
+<p>A tabela é recalculada sempre que a LSDB muda. Em caso de empate, qualquer caminho de custo mínimo é aceito.</p>
+<h3 id="encaminhamento">Encaminhamento</h3>
+<p>O roteador encaminha dois tipos de pacote: <strong>DADOS</strong> (<a href="#dados">formato</a>), com uma mensagem de texto, e <strong>ICMP</strong> (<a href="#icmp">formato</a>), com mensagens de controle. Ambos têm endereço virtual de origem e de destino, <strong>TTL</strong> (iniciado em 16 por quem cria o pacote) e um <strong>id</strong> que associa respostas a pedidos.</p>
+<h4 id="tipos-de-mensagem-icmp">Tipos de mensagem ICMP</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Tipo</th>
+<th>Mensagem</th>
+<th>Gerada por</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;"><code>8</code></td>
+<td>Pedido de eco</td>
+<td>Origem do <code>ping</code></td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>0</code></td>
+<td>Resposta de eco</td>
+<td>Destino do pedido de eco</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>11</code></td>
+<td>Tempo excedido</td>
+<td>Roteador em que o TTL chega a 0</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>3</code></td>
+<td>Destino inalcançável</td>
+<td>Roteador sem rota para o destino</td>
+</tr>
+</tbody>
+</table>
+<h4 id="ao-originar-um-pacote-dados-ou-icmp">Ao originar um pacote (DADOS ou ICMP)</h4>
+<p>Consultar a tabela. Se não houver rota para a rede do destino, informar <strong>destino inalcançável</strong> ao usuário, sem enviar nada. Caso contrário, enviar com o TTL inicial (16, ou o valor indicado no comando <code>ping</code>) ao próximo salto, isto é, ao par (IP real, porta) associado ao endereço virtual do próximo salto.</p>
+<h4 id="ao-receber-um-pacote-dados-ou-icmp">Ao receber um pacote DADOS ou ICMP</h4>
+<ol>
+<li><strong>Destino na própria rede</strong> (<code>10.G.R.0/24</code>): o pacote é entregue ao próprio roteador, que representa todos os endereços da sua rede (não há hosts reais: <code>10.7.1.1</code> e <code>10.7.1.50</code> são ambos atendidos pelo roteador <code>10.7.1.1</code>).</li>
+<li><code>DADOS</code>: exibir a origem, o destino e a mensagem.</li>
+<li><code>ICMP</code> tipo 8: responder com tipo 0 para a origem, com o mesmo id. A origem da resposta é o <strong>endereço de destino do pedido</strong> (quem foi "pingado").</li>
+<li><code>ICMP</code> tipos 0, 11 ou 3: exibir o resultado ao usuário.</li>
+<li><strong>Destino em outra rede</strong>:</li>
+<li>Decrementar o TTL. Se chegar a 0, descartar e enviar <strong>ICMP tipo 11</strong> para a origem.</li>
+<li>Consultar a tabela. Se não houver rota, descartar e enviar <strong>ICMP tipo 3</strong> para a origem.</li>
+<li>Caso contrário, encaminhar ao próximo salto (IP real e porta associados ao seu endereço virtual) com o novo TTL.</li>
+</ol>
+<p><strong>Mensagens de erro (tipos 11 e 3) geradas pelo roteador</strong> usam o endereço virtual do próprio roteador como origem, TTL 16 e o id do pacote que causou a mensagem.</p>
+<blockquote>
+<p><strong>Atenção:</strong> assim como no ICMP, <strong>nunca</strong> se gera mensagem de erro (tipos 11 ou 3) em resposta a outra mensagem de erro.</p>
+</blockquote>
+<hr />
+<h2 id="interface-com-o-usuário">Interface com o usuário</h2>
+<p>O roteador é um único programa, executado em um terminal. Enquanto executa, ele lê comandos digitados nesse mesmo terminal e exibe nele os resultados e os logs. Nos comandos, <code>&lt;destino&gt;</code> é sempre um <strong>endereço virtual</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Comando</th>
+<th>Ação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tabela</code></td>
+<td>Exibe a tabela de roteamento (rede, próximo salto, custo)</td>
+</tr>
+<tr>
+<td><code>lsdb</code></td>
+<td>Exibe a LSDB (origem, número de sequência, vizinhos e custos)</td>
+</tr>
+<tr>
+<td><code>vizinhos</code></td>
+<td>Exibe os vizinhos ativos (endereço virtual, IP real e porta)</td>
+</tr>
+<tr>
+<td><code>msg &lt;destino&gt; &lt;texto&gt;</code></td>
+<td>Envia um pacote de dados</td>
+</tr>
+<tr>
+<td><code>ping &lt;destino&gt; [TTL]</code></td>
+<td>Envia um pedido de eco com o TTL indicado (padrão: 16) e exibe a resposta recebida (eco, tempo excedido ou destino inalcançável), quem a enviou e o RTT, ou timeout após 2 s</td>
+</tr>
+</tbody>
+</table>
+<p>Além disso, o roteador deve salvar em logs em tempo real: vizinhos que ficaram ativos/inativos, LSPs novos recebidos, recálculos da tabela, pacotes encaminhados (com o próximo salto e o TTL) e mensagens ICMP geradas.</p>
+<hr />
+<h2 id="especificação-técnica">Especificação técnica</h2>
+<h3 id="ambiente-de-execução">Ambiente de execução</h3>
+<p>Cada grupo escolhe <strong>um</strong> dos ambientes abaixo, e todos os roteadores do grupo executam nele:</p>
+<ul>
+<li><strong>VDI:</strong> cada integrante executa seu roteador em sua máquina virtual de redes (somente Python);</li>
+<li><strong>Access point:</strong> cada integrante executa seu roteador em seu notebook, conectado a um access point sem internet levado pelo professor na apresentação (qualquer linguagem de programação).</li>
+</ul>
+<p>Dicas:</p>
+<ul>
+<li>O endereço IP real de cada máquina pode mudar a cada conexão (DHCP). Mantenha um arquivo de configuração fácil de editar.</li>
+<li>Em computadores pessoais, pode ser necessário liberar a porta UDP do roteador no <strong>firewall</strong>.</li>
+<li>Grupos que usarão o access point podem testar antes em qualquer rede Wi-Fi compartilhada (em casa ou com o celular como ponto de acesso).</li>
+</ul>
+<h3 id="regras-gerais-de-comunicação">Regras gerais de comunicação</h3>
+<ul>
+<li>Toda comunicação usa <strong>UDP</strong>, com mensagens em <strong>texto ASCII</strong> e campos separados por <code>:</code>.</li>
+<li>O roteador deve <strong>enviar e receber pelo mesmo socket</strong>, ligado à porta configurada. Assim, a porta UDP de origem dos pacotes enviados é a própria porta do roteador, e o vizinho consegue identificá-lo.</li>
+<li>Pacotes vindos de um par (IP real, porta) que <strong>não está</strong> na lista de vizinhos são descartados.</li>
+<li>Pacotes <strong>malformados</strong> (tipo desconhecido, número errado de campos, valores não numéricos) são descartados <strong>sem derrubar o roteador</strong>.</li>
+</ul>
+<h3 id="formato-dos-pacotes">Formato dos pacotes</h3>
+<h4 id="hello">HELLO</h4>
+<pre><code>HELLO:&lt;endereço virtual&gt;
+</code></pre>
+<p>Exemplo: <code>HELLO:10.3.1.1</code></p>
+<h4 id="lsp">LSP</h4>
+<pre><code>LSP:&lt;origem&gt;:&lt;número de sequência&gt;:&lt;vizinho&gt;=&lt;custo&gt;;&lt;vizinho&gt;=&lt;custo&gt;;...
+</code></pre>
+<p>Exemplo: <code>LSP:10.3.1.1:1767712000:10.3.2.1=1;10.3.4.1=3</code></p>
+<p>A lista contém os <strong>vizinhos ativos</strong> do roteador de origem (endereços virtuais), com o custo configurado para cada enlace. Um roteador sem vizinhos ativos envia a lista vazia: <code>LSP:10.3.1.1:1767712001:</code>.</p>
+<h4 id="dados">Dados</h4>
+<pre><code>DADOS:&lt;origem&gt;:&lt;destino&gt;:&lt;TTL&gt;:&lt;id&gt;:&lt;mensagem&gt;
+</code></pre>
+<p>Exemplo: <code>DADOS:10.3.1.1:10.3.4.1:16:0:Oi pessoal!</code></p>
+<h4 id="icmp">ICMP</h4>
+<pre><code>ICMP:&lt;origem&gt;:&lt;destino&gt;:&lt;TTL&gt;:&lt;id&gt;:&lt;tipo&gt;
+</code></pre>
+<p>Exemplo: <code>ICMP:10.3.1.1:10.3.4.1:16:42:8</code></p>
+<p>O campo <strong>tipo</strong> segue a tabela de <a href="#tipos-de-mensagem-icmp">tipos de mensagem ICMP</a>.</p>
+<h4 id="campos">Campos</h4>
+<ul>
+<li><strong>origem/destino</strong>: endereços virtuais.</li>
+<li><strong>TTL</strong>: iniciado em <strong>16</strong> por quem cria o pacote.</li>
+<li><strong>id</strong>: identificador escolhido pela origem para associar respostas a pedidos (ex.: um contador). Respostas de eco e mensagens de erro <strong>copiam o id</strong> do pacote que as provocou. Em pacotes de dados, o id pode ser 0.</li>
+</ul>
+<blockquote>
+<p><strong>Atenção:</strong> a mensagem não pode conter dois pontos (<code>:</code>) nem caracteres fora do ASCII (sem acentos). Pacotes com esses caracteres são malformados.</p>
+</blockquote>
+<hr />
+<h2 id="relatório">Relatório</h2>
+<p>O relatório deve responder às questões abaixo, com evidências (logs, saídas dos comandos, capturas do Wireshark).
+Os experimentos podem ser feitos em uma única máquina, executando vários roteadores em portas diferentes.</p>
+<p>Montar uma topologia de teste com <strong>pelo menos 5 roteadores</strong> e enlaces de custos diferentes, incluindo pelo menos um caminho alternativo. Incluir a figura da topologia com os custos.</p>
+<ol>
+<li><strong>Dijkstra:</strong> para um dos roteadores, apresentar a LSDB e a execução do algoritmo de Dijkstra passo a passo (tabela de iterações, como na aula), comparando o resultado com a tabela exibida pelo programa.</li>
+<li><strong>Inundação:</strong> contar, a partir de uma captura do Wireshark ou dos logs, quantos pacotes LSP circulam na rede após <strong>uma única mudança</strong> (a queda de um vizinho). Quantos foram descartados como cópias? Analise e compare com o que um protocolo de vetor distância enviaria na mesma situação.</li>
+<li><strong>Convergência:</strong> derrubar um roteador que esteja no caminho entre dois outros e medir o tempo até a rota ser recalculada. Quanto desse tempo corresponde à detecção da falha e quanto à inundação e ao recálculo? Relacione com os temporizadores do HELLO.</li>
+<li><strong>Números de sequência:</strong> por que o LSP precisa de um número de sequência? O que aconteceria se um roteador reiniciado voltasse a numerar seus LSPs a partir de 0?</li>
+<li><strong>Confiabilidade:</strong> os LSPs são enviados por UDP e não têm confirmação. O que acontece se um LSP for perdido? Qual mecanismo da especificação recupera a LSDB?</li>
+<li><strong>TTL:</strong> se todos os roteadores calculam as rotas sobre a mesma topologia, por que ainda é necessário o TTL? Descreva uma situação, durante a convergência, em que um pacote poderia circular em laço.</li>
+</ol>
+<hr />
+<h2 id="apresentação">Apresentação</h2>
+<p>As apresentações ocorrem em <strong>3 dias</strong>, com cerca de 5 grupos por dia. Os grupos de cada dia são divididos pelo professor em <strong>duplas de grupos</strong> (ou um trio de grupos, se o número for ímpar), com cerca de 30 minutos por dupla. As duplas são formadas por grupos do <strong>mesmo ambiente de execução</strong> (VDI com VDI, access point com access point).</p>
+<p><strong>Rede do grupo:</strong> cada integrante executa um roteador em sua própria máquina, no ambiente escolhido pelo grupo (4 roteadores nos quartetos, 3 nos trios), com enlaces de custos diferentes e pelo menos um caminho alternativo. A rede deve estar <strong>montada e funcionando</strong> no início do horário da dupla.</p>
+<p><strong>Cada grupo (~10 min):</strong></p>
+<ol>
+<li>Exibe <code>vizinhos</code>, <code>lsdb</code> e <code>tabela</code> em cada roteador, conferindo com a topologia.</li>
+<li>Executa <code>ping</code> com TTL 1, 2, 3... até o roteador mais distante, mostrando cada roteador do caminho, e envia uma <code>msg</code>.</li>
+<li>Executa <code>ping</code> para uma rede inexistente.</li>
+<li>O professor derruba um roteador ou enlace; o grupo mostra a reconvergência e repete o <code>ping</code> com TTL crescente, mostrando o novo caminho. O roteador derrubado é reiniciado em seguida.</li>
+<li>Perguntas sobre o código.</li>
+</ol>
+<p><strong>Interoperabilidade (~5 min, ao final da dupla):</strong> os dois grupos criam um enlace entre um roteador de cada rede (uma linha a mais no arquivo de configuração de cada lado) e mostram:</p>
+<ol>
+<li>a <code>lsdb</code> e a <code>tabela</code> com os roteadores do outro grupo;</li>
+<li><code>ping</code> (com TTL crescente) e <code>msg</code> atravessando as duas redes;</li>
+<li>a reconvergência quando o professor derruba o enlace entre os grupos.</li>
+</ol>
+<p>Recomenda-se testar com outros grupos antes da apresentação.</p>
+<p>Todos os integrantes devem estar presentes e ser capazes de explicar qualquer parte do código.</p>
+<blockquote>
+<p><strong>SOBRE O USO DE IA:</strong> o uso de IA é permitido, mas código que o integrante questionado não consiga explicar não será considerado de autoria do grupo, e o trabalho receberá nota <strong>zero</strong>, independentemente de funcionar.</p>
+</blockquote>
+<hr />
+<h2 id="avaliação">Avaliação</h2>
+<p><strong>Os itens 1 a 6 são avaliados na rede do grupo durante a apresentação; o item 7, na conexão com a rede do outro grupo.</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Critério</th>
+<th>Descrição</th>
+<th style="text-align: right;">Peso</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Vizinhança</strong></td>
+<td>HELLO periódico, detecção de vizinho ativo/inativo</td>
+<td style="text-align: right;">5%</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>LSPs e inundação</strong></td>
+<td>Geração, número de sequência, inundação, descarte de cópias, sincronização com novo vizinho, envelhecimento</td>
+<td style="text-align: right;">20%</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Tabela de roteamento</strong></td>
+<td>Dijkstra correto sobre a LSDB, recálculo após mudanças</td>
+<td style="text-align: right;">15%</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Encaminhamento</strong></td>
+<td>Entrega e encaminhamento de dados com decremento de TTL</td>
+<td style="text-align: right;">10%</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>ICMP</strong></td>
+<td><code>ping</code> com TTL, resposta de eco, tempo excedido, destino inalcançável</td>
+<td style="text-align: right;">15%</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Observabilidade</strong></td>
+<td>Logs em tempo real dos eventos</td>
+<td style="text-align: right;">5%</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Interoperabilidade</strong></td>
+<td>Rede conectada à do outro grupo: LSDB, rotas, <code>ping</code>/<code>msg</code> e reconvergência entre as duas implementações</td>
+<td style="text-align: right;">10%</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>Relatório</strong></td>
+<td>Experimentos e questões</td>
+<td style="text-align: right;">20%</td>
+</tr>
+<tr>
+<td></td>
+<td><strong>Total</strong></td>
+<td></td>
+<td style="text-align: right;"><strong>100%</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="regras-gerais">Regras Gerais</h2>
+<p><strong>Grupos:</strong> <strong>4 componentes</strong>. Trios serão aceitos apenas para fechar a divisão da turma (ex.: com 58 alunos, 13 quartetos e 2 trios). Informar no Moodle os integrantes e data de apresentação.</p>
+<p><strong>Linguagem:</strong> livre, usando a API de sockets UDP diretamente. O algoritmo de Dijkstra deve ser <strong>implementado pelo grupo</strong>: não é permitido usar bibliotecas de grafos ou de roteamento (ex.: <code>networkx</code>, <code>scipy.sparse.csgraph</code>, JGraphT). Estruturas de dados da biblioteca padrão, como filas de prioridade (<code>heapq</code>, <code>PriorityQueue</code>), são permitidas.</p>
+<p><strong>Data de entrega:</strong> todos os grupos antes do início da primeira aula de apresentação <br>
+<strong>Datas de apresentação:</strong> conferir no Moodle <br></p>
+<p>Obs.: todos os participantes do grupo devem estar presentes para a apresentação.</p>
+<p><strong>Entrega final</strong> (arquivo <code>.zip</code>, por um integrante do grupo):</p>
+<ul>
+<li>Código-fonte (sem binários ou arquivos de build);</li>
+<li><code>README</code> com instruções de execução e o formato do arquivo de configuração;</li>
+<li>Relatório em PDF;</li>
+<li>Capturas (<code>.pcapng</code>) usadas no relatório.</li>
+</ul>
+<p><strong>IMPORTANTE</strong>: Não serão aceitos trabalhos entregues fora do prazo. Trabalhos que não compilam ou que não executam não serão avaliados. Todos os trabalhos serão analisados e comparados. Caso seja identificada cópia de trabalhos, todos os trabalhos envolvidos receberão nota ZERO.</p>
+</div>
+</body>
+</html>
