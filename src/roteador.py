@@ -35,8 +35,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config as config_mod
-from constantes import INTERVALO_TICK, TAMANHO_BUFFER
+import pacotes
+from constantes import INTERVALO_HELLO, INTERVALO_TICK, TAMANHO_BUFFER
 from log import abrir as abrir_log, log
+from vizinhos import Vizinhanca
 
 
 class Roteador:
@@ -56,8 +58,23 @@ class Roteador:
         # fora desta lista e descartado (regra do enunciado).
         self.origens_validas = {(v.ip, v.porta) for v in self.cfg.vizinhos}
 
-        # TODO: instanciar Vizinhanca, LSDB, Encaminhador e a tabela.
+        self.vizinhanca = Vizinhanca(self.cfg, self.enviar, self.ao_mudar_vizinho)
+        self.proximo_hello = 0.0        # monotonic; 0 = manda no primeiro tick
+
+        # TODO (etapa 3+): instanciar LSDB e Encaminhador.
         self.tabela = {}
+
+    def ao_mudar_vizinho(self, endereco, ativo):
+        """Chamado pela Vizinhanca quando um vizinho entra ou sai.
+
+        O enunciado: toda mudanca na lista de ativos gera IMEDIATAMENTE um novo
+        LSP proprio. E, na entrada, o roteador ainda envia ao novo vizinho uma
+        copia de toda a sua LSDB -- sem isso, quem acabou de entrar na rede so
+        conheceria os outros na proxima renovacao, ate 30 s depois.
+        """
+        # TODO (etapa 3+): lsdb.gerar_proprio()
+        # TODO (etapa 5):  if ativo: lsdb.sincronizar_com(endereco)
+        pass
 
     # ------------------------------------------------------------------ envio
     def enviar(self, texto, ip, porta):
@@ -76,16 +93,30 @@ class Roteador:
                 if origem not in self.origens_validas:
                     log("ERRO", f"pacote de origem desconhecida {origem[0]}:{origem[1]} -- descartado")
                     continue
-                texto = dados.decode("ascii", errors="replace")
-
-                # TODO: pacotes.parse(texto) e despacho por tipo:
-                #   HELLO -> vizinhanca.ao_receber_hello
-                #   LSP   -> lsdb.ao_receber_lsp
-                #   DADOS / ICMP -> encaminhador.ao_receber
-                log("INFO", f"recebido de {origem[0]}:{origem[1]}: {texto!r} (tratamento nao implementado)")
+                texto = pacotes.decodificar(dados)
+                pacote = pacotes.parse(texto)
+                if pacote is None:
+                    log("ERRO", f"malformado de {origem[0]}:{origem[1]}: {texto!r} -- descartado")
+                    continue
+                with self.lock:
+                    self.despachar(pacote, origem)
 
             except Exception as e:                       # noqa: BLE001
                 log("ERRO", f"excecao tratando pacote de {origem}: {e!r}")
+
+    def despachar(self, pacote, origem):
+        """Chamado com o lock segurado."""
+        ip, porta = origem
+        if isinstance(pacote, pacotes.Hello):
+            self.vizinhanca.ao_receber_hello(pacote, ip, porta)
+        elif isinstance(pacote, pacotes.LSP):
+            # TODO (etapa 4): lsdb.ao_receber_lsp(pacote, ip, porta)
+            log("LSP", f"de {ip}:{porta} origem {pacote.origem} seq {pacote.seq} "
+                       f"({len(pacote.vizinhos)} vizinhos) -- LSDB nao implementada")
+        else:
+            # TODO (etapas 8 e 9): encaminhador.ao_receber(pacote, ip, porta)
+            log("FWD", f"{type(pacote).__name__} de {ip}:{porta} "
+                       f"-- encaminhamento nao implementado")
 
     # ------------------------------------------------------------ temporizador
     def laco_temporizadores(self):
@@ -93,12 +124,14 @@ class Roteador:
             time.sleep(INTERVALO_TICK)
             try:
                 with self.lock:
-                    pass
-                    # TODO: a cada INTERVALO_HELLO        -> vizinhanca.enviar_hellos()
-                    # TODO: a cada tick                   -> vizinhanca.varrer_timeouts()
-                    # TODO: a cada tick                   -> lsdb.envelhecer()
-                    # TODO: a cada INTERVALO_RENOVACAO_LSP-> lsdb.gerar_proprio()
-                    # TODO: a cada tick                   -> expirar pings pendentes
+                    agora = time.monotonic()
+                    if agora >= self.proximo_hello:
+                        self.vizinhanca.enviar_hellos()
+                        self.proximo_hello = agora + INTERVALO_HELLO
+                    self.vizinhanca.varrer_timeouts()
+                    # TODO (etapa 6): lsdb.envelhecer()
+                    # TODO (etapa 3): a cada INTERVALO_RENOVACAO_LSP -> lsdb.gerar_proprio()
+                    # TODO (etapa 9): expirar pings pendentes
             except Exception as e:                       # noqa: BLE001
                 log("ERRO", f"excecao nos temporizadores: {e!r}")
 
@@ -120,11 +153,24 @@ class Roteador:
 
             if cmd == "sair":
                 break
-            elif cmd in ("tabela", "lsdb", "vizinhos", "msg", "ping"):
+            elif cmd == "vizinhos":
+                self.mostrar_vizinhos()
+            elif cmd in ("tabela", "lsdb", "msg", "ping"):
                 print(f"[{cmd}] ainda nao implementado")
             else:
                 print(ajuda)
         self.parar()
+
+    def mostrar_vizinhos(self):
+        with self.lock:
+            ativos = [e for e in self.vizinhanca.listar() if e.ativo]
+            total = len(self.vizinhanca.listar())
+        if not ativos:
+            print(f"nenhum vizinho ativo (de {total} configurados)")
+            return
+        print(f"{'ENDERECO':<12} {'IP REAL':<16} {'PORTA':<7} CUSTO")
+        for e in ativos:
+            print(f"{e.endereco:<12} {e.ip:<16} {e.porta:<7} {e.custo}")
 
     def parar(self):
         self.rodando = False
