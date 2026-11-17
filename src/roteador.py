@@ -38,6 +38,7 @@ import config as config_mod
 import pacotes
 from constantes import INTERVALO_HELLO, INTERVALO_TICK, TAMANHO_BUFFER
 from log import abrir as abrir_log, log
+from lsdb import LSDB
 from vizinhos import Vizinhanca
 
 
@@ -59,9 +60,10 @@ class Roteador:
         self.origens_validas = {(v.ip, v.porta) for v in self.cfg.vizinhos}
 
         self.vizinhanca = Vizinhanca(self.cfg, self.enviar, self.ao_mudar_vizinho)
+        self.lsdb = LSDB(self.cfg, self.vizinhanca, self.enviar, self.ao_mudar_lsdb)
         self.proximo_hello = 0.0        # monotonic; 0 = manda no primeiro tick
 
-        # TODO (etapa 3+): instanciar LSDB e Encaminhador.
+        # TODO (etapas 7-9): instanciar o Encaminhador.
         self.tabela = {}
 
     def ao_mudar_vizinho(self, endereco, ativo):
@@ -72,8 +74,14 @@ class Roteador:
         copia de toda a sua LSDB -- sem isso, quem acabou de entrar na rede so
         conheceria os outros na proxima renovacao, ate 30 s depois.
         """
-        # TODO (etapa 3+): lsdb.gerar_proprio()
-        # TODO (etapa 5):  if ativo: lsdb.sincronizar_com(endereco)
+        self.lsdb.gerar_proprio()
+        if ativo:
+            self.lsdb.sincronizar_com(endereco)
+
+    def ao_mudar_lsdb(self):
+        """A LSDB mudou -> a tabela e recalculada. Sempre."""
+        # TODO (etapa 7): self.tabela = dijkstra.calcular(self.lsdb.grafo(),
+        #                                                 self.cfg.endereco)
         pass
 
     # ------------------------------------------------------------------ envio
@@ -110,9 +118,7 @@ class Roteador:
         if isinstance(pacote, pacotes.Hello):
             self.vizinhanca.ao_receber_hello(pacote, ip, porta)
         elif isinstance(pacote, pacotes.LSP):
-            # TODO (etapa 4): lsdb.ao_receber_lsp(pacote, ip, porta)
-            log("LSP", f"de {ip}:{porta} origem {pacote.origem} seq {pacote.seq} "
-                       f"({len(pacote.vizinhos)} vizinhos) -- LSDB nao implementada")
+            self.lsdb.ao_receber_lsp(pacote, ip, porta)
         else:
             # TODO (etapas 8 e 9): encaminhador.ao_receber(pacote, ip, porta)
             log("FWD", f"{type(pacote).__name__} de {ip}:{porta} "
@@ -129,8 +135,9 @@ class Roteador:
                         self.vizinhanca.enviar_hellos()
                         self.proximo_hello = agora + INTERVALO_HELLO
                     self.vizinhanca.varrer_timeouts()
-                    # TODO (etapa 6): lsdb.envelhecer()
-                    # TODO (etapa 3): a cada INTERVALO_RENOVACAO_LSP -> lsdb.gerar_proprio()
+                    self.lsdb.envelhecer()
+                    if agora >= self.lsdb.proxima_renovacao:
+                        self.lsdb.gerar_proprio()       # renovacao de 30 s
                     # TODO (etapa 9): expirar pings pendentes
             except Exception as e:                       # noqa: BLE001
                 log("ERRO", f"excecao nos temporizadores: {e!r}")
@@ -155,7 +162,9 @@ class Roteador:
                 break
             elif cmd == "vizinhos":
                 self.mostrar_vizinhos()
-            elif cmd in ("tabela", "lsdb", "msg", "ping"):
+            elif cmd == "lsdb":
+                self.mostrar_lsdb()
+            elif cmd in ("tabela", "msg", "ping"):
                 print(f"[{cmd}] ainda nao implementado")
             else:
                 print(ajuda)
@@ -172,6 +181,17 @@ class Roteador:
         for e in ativos:
             print(f"{e.endereco:<12} {e.ip:<16} {e.porta:<7} {e.custo}")
 
+    def mostrar_lsdb(self):
+        with self.lock:
+            linhas = self.lsdb.linhas()
+        if not linhas:
+            print("LSDB vazia")
+            return
+        print(f"{'ORIGEM':<12} {'SEQ':<12} VIZINHOS")
+        for origem, seq, vizinhos in linhas:
+            marca = " (eu)" if origem == self.cfg.endereco else ""
+            print(f"{origem:<12} {seq:<12} {vizinhos}{marca}")
+
     def parar(self):
         self.rodando = False
         try:
@@ -185,6 +205,11 @@ class Roteador:
                     f"porta UDP {self.cfg.porta}")
         for v in self.cfg.vizinhos:
             log("INFO", f"vizinho configurado {v.endereco} em {v.ip}:{v.porta} custo {v.custo}")
+
+        # LSP inicial: sem vizinho ativo ainda, vai com a lista vazia --
+        # LSP:10.7.1.1:<unix time>:  -- que e valido pelo enunciado.
+        with self.lock:
+            self.lsdb.gerar_proprio()
 
         for alvo in (self.laco_recepcao, self.laco_temporizadores):
             threading.Thread(target=alvo, daemon=True).start()

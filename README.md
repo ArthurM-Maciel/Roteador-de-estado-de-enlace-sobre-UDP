@@ -277,14 +277,15 @@ python3 src/roteador.py config/teste/t1.conf     # um roteador
 ./scripts/subir_teste.sh                         # os 5 da topologia do relatório
 ```
 
-O que **já funciona**: leitura da configuração, socket UDP único, thread de
-recepção com filtro de origem, thread de temporizadores, CLI com os comandos, e
-log simultâneo em terminal e em `logs/<nome>.log`.
+O que **já funciona** (etapas 0–6): configuração, socket UDP único, filtro de
+origem, parse dos 4 formatos, HELLO com detecção de vizinho ativo/inativo,
+geração e inundação de LSPs com descarte de cópias, sincronização com vizinho
+novo, envelhecimento, e os comandos `vizinhos` e `lsdb`.
 
-O que **ainda não funciona**: todo o protocolo. Os módulos `pacotes`,
-`vizinhos`, `lsdb`, `dijkstra` e `encaminhamento` são stubs — cada um tem no
-topo a especificação do que implementar, com as regras do enunciado e as
-armadilhas já escritas.
+O que **ainda não funciona** (etapas 7–9): Dijkstra, tabela de roteamento,
+encaminhamento e ICMP. Os módulos `dijkstra.py` e `encaminhamento.py` são stubs
+— cada um tem no topo a especificação do que implementar, com as regras do
+enunciado e as armadilhas já escritas.
 
 > **Use isto antes de escrever qualquer protocolo:** rodem o esqueleto em dois
 > notebooks ligados ao access point, com os IPs reais na configuração, e mandem
@@ -298,13 +299,13 @@ Siga a pilha de baixo para cima. Cada etapa é demonstrável sozinha — e isso
 importa: se algo quebrar na véspera, você ainda tem as camadas de baixo
 funcionando.
 
-- [ ] **0. Esqueleto** — socket UDP no `bind`, loop de recepção, comando `sair`.
-- [ ] **1. HELLO** — envio a cada 5s, recepção, `vizinhos` mostrando a lista. Testar com 2 processos na mesma máquina em portas diferentes.
-- [ ] **2. Timeout de vizinho** — matar um processo e ver o outro declarar inativo em 20s.
-- [ ] **3. LSP próprio** — gerar, numerar pelo Unix time, guardar na própria LSDB, comando `lsdb`.
-- [ ] **4. Inundação** — repassar, descartar cópia por sequência, não devolver para quem mandou. Testar com 3+ processos e conferir que todas as LSDBs ficam idênticas.
-- [ ] **5. Sincronização** — vizinho novo recebe a LSDB inteira. Teste: suba o 3º roteador e veja a LSDB dele encher na hora, não em 30s.
-- [ ] **6. Envelhecimento** — LSP alheio parado há 90s sai da LSDB.
+- [x] **0. Esqueleto** — socket UDP no `bind`, loop de recepção, comando `sair`.
+- [x] **1. HELLO** — envio a cada 5s, recepção, `vizinhos` mostrando a lista. Testar com 2 processos na mesma máquina em portas diferentes.
+- [x] **2. Timeout de vizinho** — matar um processo e ver o outro declarar inativo em 20s.
+- [x] **3. LSP próprio** — gerar, numerar pelo Unix time, guardar na própria LSDB, comando `lsdb`.
+- [x] **4. Inundação** — repassar, descartar cópia por sequência, não devolver para quem mandou. Testar com 3+ processos e conferir que todas as LSDBs ficam idênticas.
+- [x] **5. Sincronização** — vizinho novo recebe a LSDB inteira. Teste: suba o 3º roteador e veja a LSDB dele encher na hora, não em 30s.
+- [x] **6. Envelhecimento** — LSP alheio parado há 90s sai da LSDB.
 - [ ] **7. Dijkstra** — construir o grafo a partir da LSDB, calcular, comando `tabela`. **Conferir no papel** antes de confiar no código.
 - [ ] **8. DADOS** — `msg`, entrega local, encaminhamento, decremento de TTL.
 - [ ] **9. ICMP** — `ping` (tipo 8/0) com RTT e timeout de 2s, tipo 11 no TTL zerado, tipo 3 sem rota.
