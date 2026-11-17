@@ -35,8 +35,11 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config as config_mod
+import dijkstra
 import pacotes
-from constantes import INTERVALO_HELLO, INTERVALO_TICK, TAMANHO_BUFFER
+from constantes import (INTERVALO_HELLO, INTERVALO_TICK, TAMANHO_BUFFER,
+                        TTL_INICIAL)
+from encaminhamento import Encaminhador
 from log import abrir as abrir_log, log
 from lsdb import LSDB
 from vizinhos import Vizinhanca
@@ -62,9 +65,9 @@ class Roteador:
         self.vizinhanca = Vizinhanca(self.cfg, self.enviar, self.ao_mudar_vizinho)
         self.lsdb = LSDB(self.cfg, self.vizinhanca, self.enviar, self.ao_mudar_lsdb)
         self.proximo_hello = 0.0        # monotonic; 0 = manda no primeiro tick
-
-        # TODO (etapas 7-9): instanciar o Encaminhador.
         self.tabela = {}
+        self.encaminhador = Encaminhador(self.cfg, self.vizinhanca,
+                                         self.enviar, lambda: self.tabela)
 
     def ao_mudar_vizinho(self, endereco, ativo):
         """Chamado pela Vizinhanca quando um vizinho entra ou sai.
@@ -80,9 +83,13 @@ class Roteador:
 
     def ao_mudar_lsdb(self):
         """A LSDB mudou -> a tabela e recalculada. Sempre."""
-        # TODO (etapa 7): self.tabela = dijkstra.calcular(self.lsdb.grafo(),
-        #                                                 self.cfg.endereco)
-        pass
+        antiga = self.tabela
+        self.tabela = dijkstra.calcular(self.lsdb.grafo(), self.cfg.endereco)
+        if self.tabela != antiga:
+            log("ROTA", f"tabela recalculada: {len(self.tabela)} rota(s) -- "
+                        + (", ".join(f"{r}->{s} ({c})"
+                                     for r, (s, c) in sorted(self.tabela.items()))
+                           or "nenhuma"))
 
     # ------------------------------------------------------------------ envio
     def enviar(self, texto, ip, porta):
@@ -120,9 +127,7 @@ class Roteador:
         elif isinstance(pacote, pacotes.LSP):
             self.lsdb.ao_receber_lsp(pacote, ip, porta)
         else:
-            # TODO (etapas 8 e 9): encaminhador.ao_receber(pacote, ip, porta)
-            log("FWD", f"{type(pacote).__name__} de {ip}:{porta} "
-                       f"-- encaminhamento nao implementado")
+            self.encaminhador.ao_receber(pacote, ip, porta)
 
     # ------------------------------------------------------------ temporizador
     def laco_temporizadores(self):
@@ -138,7 +143,7 @@ class Roteador:
                     self.lsdb.envelhecer()
                     if agora >= self.lsdb.proxima_renovacao:
                         self.lsdb.gerar_proprio()       # renovacao de 30 s
-                    # TODO (etapa 9): expirar pings pendentes
+                    self.encaminhador.expirar_pings()
             except Exception as e:                       # noqa: BLE001
                 log("ERRO", f"excecao nos temporizadores: {e!r}")
 
@@ -164,8 +169,26 @@ class Roteador:
                 self.mostrar_vizinhos()
             elif cmd == "lsdb":
                 self.mostrar_lsdb()
-            elif cmd in ("tabela", "msg", "ping"):
-                print(f"[{cmd}] ainda nao implementado")
+            elif cmd == "tabela":
+                self.mostrar_tabela()
+            elif cmd == "msg":
+                if len(partes) < 3:
+                    print("uso: msg <destino> <texto>")
+                else:
+                    with self.lock:
+                        self.encaminhador.originar_dados(partes[1], partes[2])
+            elif cmd == "ping":
+                if len(partes) < 2:
+                    print("uso: ping <destino> [TTL]")
+                else:
+                    ttl = TTL_INICIAL
+                    if len(partes) >= 3:
+                        if not partes[2].isdigit() or not 1 <= int(partes[2]) <= 255:
+                            print("TTL deve ser um inteiro de 1 a 255")
+                            continue
+                        ttl = int(partes[2])
+                    with self.lock:
+                        self.encaminhador.originar_ping(partes[1], ttl)
             else:
                 print(ajuda)
         self.parar()
@@ -180,6 +203,16 @@ class Roteador:
         print(f"{'ENDERECO':<12} {'IP REAL':<16} {'PORTA':<7} CUSTO")
         for e in ativos:
             print(f"{e.endereco:<12} {e.ip:<16} {e.porta:<7} {e.custo}")
+
+    def mostrar_tabela(self):
+        with self.lock:
+            tabela = dict(self.tabela)
+        print(f"{'REDE DESTINO':<16} {'PROXIMO SALTO':<15} CUSTO")
+        if not tabela:
+            print("(vazia -- nenhum roteador alcancavel)")
+            return
+        for rede, (salto, custo) in sorted(tabela.items()):
+            print(f"{rede:<16} {salto:<15} {custo}")
 
     def mostrar_lsdb(self):
         with self.lock:

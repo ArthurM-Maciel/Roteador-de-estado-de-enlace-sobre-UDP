@@ -277,15 +277,12 @@ python3 src/roteador.py config/teste/t1.conf     # um roteador
 ./scripts/subir_teste.sh                         # os 5 da topologia do relatório
 ```
 
-O que **já funciona** (etapas 0–6): configuração, socket UDP único, filtro de
-origem, parse dos 4 formatos, HELLO com detecção de vizinho ativo/inativo,
-geração e inundação de LSPs com descarte de cópias, sincronização com vizinho
-novo, envelhecimento, e os comandos `vizinhos` e `lsdb`.
+**O roteador está funcionalmente completo** (etapas 0–11): vizinhança, LSDB com
+inundação, Dijkstra, encaminhamento, ICMP, logs e tratamento de pacote
+malformado. Os cinco comandos do enunciado funcionam.
 
-O que **ainda não funciona** (etapas 7–9): Dijkstra, tabela de roteamento,
-encaminhamento e ICMP. Os módulos `dijkstra.py` e `encaminhamento.py` são stubs
-— cada um tem no topo a especificação do que implementar, com as regras do
-enunciado e as armadilhas já escritas.
+Falta a **etapa 12 — interoperabilidade**: testar contra a implementação de
+outro grupo. É o único item que não dá para fazer sozinho.
 
 > **Use isto antes de escrever qualquer protocolo:** rodem o esqueleto em dois
 > notebooks ligados ao access point, com os IPs reais na configuração, e mandem
@@ -306,11 +303,11 @@ funcionando.
 - [x] **4. Inundação** — repassar, descartar cópia por sequência, não devolver para quem mandou. Testar com 3+ processos e conferir que todas as LSDBs ficam idênticas.
 - [x] **5. Sincronização** — vizinho novo recebe a LSDB inteira. Teste: suba o 3º roteador e veja a LSDB dele encher na hora, não em 30s.
 - [x] **6. Envelhecimento** — LSP alheio parado há 90s sai da LSDB.
-- [ ] **7. Dijkstra** — construir o grafo a partir da LSDB, calcular, comando `tabela`. **Conferir no papel** antes de confiar no código.
-- [ ] **8. DADOS** — `msg`, entrega local, encaminhamento, decremento de TTL.
-- [ ] **9. ICMP** — `ping` (tipo 8/0) com RTT e timeout de 2s, tipo 11 no TTL zerado, tipo 3 sem rota.
-- [ ] **10. Logs** — todos os eventos exigidos pelo critério 6.
-- [ ] **11. Robustez** — pacote malformado, origem desconhecida, campo não-numérico. Mande lixo de propósito com `netcat` e veja se o roteador aguenta.
+- [x] **7. Dijkstra** — construir o grafo a partir da LSDB, calcular, comando `tabela`. **Conferir no papel** antes de confiar no código.
+- [x] **8. DADOS** — `msg`, entrega local, encaminhamento, decremento de TTL.
+- [x] **9. ICMP** — `ping` (tipo 8/0) com RTT e timeout de 2s, tipo 11 no TTL zerado, tipo 3 sem rota.
+- [x] **10. Logs** — todos os eventos exigidos pelo critério 6.
+- [x] **11. Robustez** — pacote malformado, origem desconhecida, campo não-numérico. Mande lixo de propósito com `netcat` e veja se o roteador aguenta.
 - [ ] **12. Interoperabilidade** — testar com outro grupo **antes** da apresentação.
 
 ## Dijkstra com próximo salto
