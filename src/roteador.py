@@ -3,20 +3,9 @@
 
     python3 src/roteador.py config/teste/t1.conf
 
-ESTADO: esqueleto. O que ja funciona:
-  - le o arquivo de configuracao
-  - sobe o socket UDP unico (envia E recebe pela mesma porta)
-  - thread de recepcao, que LOGA todo pacote recebido em bruto
-  - thread de temporizadores (tick de 1 s)
-  - CLI com os comandos do enunciado
-
-O que ainda nao funciona: todo o protocolo. Os modulos vizinhos/lsdb/
-dijkstra/encaminhamento sao stubs com a especificacao escrita dentro.
-
-Util desde ja: rodando isto em dois notebooks e mandando qualquer texto de um
-para o outro, da para verificar se o access point deixa os clientes se falarem
--- que e o risco numero 1 do trabalho, e precisa ser testado antes de existir
-qualquer linha de protocolo.
+Le a configuracao, sobe o socket UDP unico (envia E recebe pela mesma porta),
+dispara as threads de recepcao e de temporizadores e roda a CLI com os
+comandos do enunciado.
 
 ARQUITETURA (ver README):
     thread RECEPCAO  -> recvfrom, filtra origem, despacha por tipo
@@ -93,7 +82,12 @@ class Roteador:
 
     # ------------------------------------------------------------------ envio
     def enviar(self, texto, ip, porta):
-        self.sock.sendto(texto.encode("ascii", errors="replace"), (ip, porta))
+        # Falha de envio para UM vizinho (rede caiu, host sumiu) nao pode abortar
+        # o laco que esta mandando HELLO/LSP para todos os outros.
+        try:
+            self.sock.sendto(texto.encode("ascii", errors="replace"), (ip, porta))
+        except OSError as e:
+            log("ERRO", f"falha ao enviar para {ip}:{porta}: {e}")
 
     # -------------------------------------------------------------- recepcao
     def laco_recepcao(self):
@@ -103,7 +97,11 @@ class Roteador:
             try:
                 dados, origem = self.sock.recvfrom(TAMANHO_BUFFER)
             except OSError:
-                return
+                # No Windows, um ICMP "porta inalcancavel" de um vizinho caido
+                # faz o recvfrom levantar ConnectionResetError. So sai se paramos.
+                if not self.rodando:
+                    return
+                continue
             try:
                 if origem not in self.origens_validas:
                     log("ERRO", f"pacote de origem desconhecida {origem[0]}:{origem[1]} -- descartado")
@@ -149,7 +147,7 @@ class Roteador:
 
     # --------------------------------------------------------------------- cli
     def laco_cli(self):
-        """Provisorio -- migrar para cli.py quando os modulos existirem."""
+        """Os comandos do enunciado. input() bloqueia so esta thread."""
         ajuda = ("comandos: tabela | lsdb | vizinhos | "
                  "msg <destino> <texto> | ping <destino> [TTL] | sair")
         print(ajuda)
@@ -162,6 +160,10 @@ class Roteador:
                 continue
             partes = linha.split(None, 2)
             cmd = partes[0].lower()
+            if cmd in ("msg", "ping") and len(partes) >= 2 \
+                    and not pacotes.endereco_valido(partes[1]):
+                print(f"destino invalido: {partes[1]!r} (use um endereco virtual, ex. 10.7.4.1)")
+                continue
 
             if cmd == "sair":
                 break
@@ -259,7 +261,12 @@ def main():
     os.makedirs(os.path.join(raiz, "logs"), exist_ok=True)
     nome = os.path.splitext(os.path.basename(caminho))[0]
     abrir_log(os.path.join(raiz, "logs", f"{nome}.log"))
-    Roteador(caminho).executar()
+    try:
+        roteador = Roteador(caminho)
+    except (OSError, ValueError) as e:
+        print(f"erro na subida: {e}", file=sys.stderr)
+        return 1
+    roteador.executar()
     return 0
 
 

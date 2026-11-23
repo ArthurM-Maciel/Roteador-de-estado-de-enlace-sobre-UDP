@@ -13,7 +13,6 @@ Categorias fixas, para dar para filtrar com grep na hora de montar o relatorio:
   INFO     ciclo de vida do roteador
 """
 
-import sys
 import threading
 import time
 
