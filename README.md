@@ -204,7 +204,7 @@ Módulos sugeridos (vale para qualquer linguagem):
 | `lsdb` | armazena LSPs, decide descarte, envelhece |
 | `dijkstra` | grafo → tabela de roteamento (**escrito pelo grupo**, sem biblioteca) |
 | `encaminhamento` | DADOS/ICMP, TTL, geração de erros |
-| `cli` | os 5 comandos |
+| `roteador` | socket, threads e os 5 comandos da CLI |
 | `log` | eventos em tempo real, com timestamp |
 
 ## Notas de Python
@@ -270,11 +270,17 @@ socket liberar — e o professor vai mandar reiniciar.
 O GIL não atrapalha: o trabalho é I/O, não CPU. E `input()` numa thread própria
 bloqueia só aquela thread.
 
-## Como rodar o esqueleto
+## Como rodar
 
 ```bash
 python3 src/roteador.py config/teste/t1.conf     # um roteador
 ./scripts/subir_teste.sh                         # os 5 da topologia do relatório
+```
+
+Testes (só biblioteca padrão, ~5 s; o de integração sobe 3 roteadores reais):
+
+```bash
+python3 -m unittest discover -s tests -b
 ```
 
 **O roteador está funcionalmente completo** (etapas 0–11): vizinhança, LSDB com
@@ -284,7 +290,7 @@ malformado. Os cinco comandos do enunciado funcionam.
 Falta a **etapa 12 — interoperabilidade**: testar contra a implementação de
 outro grupo. É o único item que não dá para fazer sozinho.
 
-> **Use isto antes de escrever qualquer protocolo:** rodem o esqueleto em dois
+> **Use isto antes de escrever qualquer protocolo:** rodem o roteador em dois
 > notebooks ligados ao access point, com os IPs reais na configuração, e mandem
 > qualquer texto de um para o outro. Se o pacote aparecer no log do outro lado,
 > o AP não isola clientes — o maior risco do trabalho fica eliminado. Se não
@@ -869,12 +875,11 @@ Roda tudo numa máquina só, em portas 6001–6005.
 │   ├── constantes.py             temporizadores, TTL, tipos ICMP
 │   ├── config.py                 leitura do arquivo de configuração
 │   ├── log.py                    logs em tempo real (terminal + arquivo)
-│   ├── pacotes.py                stub — serialização e parse dos 4 formatos
-│   ├── vizinhos.py               stub — HELLO, vizinhança, mapa virtual→(IP,porta)
-│   ├── lsdb.py                   stub — LSPs, inundação, envelhecimento
-│   ├── dijkstra.py               stub — grafo → tabela de roteamento
-│   ├── encaminhamento.py         stub — DADOS/ICMP, TTL
-│   └── cli.py                    stub — os 5 comandos (hoje provisórios no roteador.py)
+│   ├── pacotes.py                serialização e parse dos 4 formatos
+│   ├── vizinhos.py               HELLO, vizinhança, mapa virtual→(IP,porta)
+│   ├── lsdb.py                   LSPs, inundação, envelhecimento
+│   ├── dijkstra.py               grafo → tabela de roteamento
+│   └── encaminhamento.py         DADOS/ICMP, TTL
 ├── config/
 │   ├── r1..r4.conf               topologia do grupo (IPs reais a preencher)
 │   └── teste/t1..t5.conf         topologia do relatório, tudo em 127.0.0.1

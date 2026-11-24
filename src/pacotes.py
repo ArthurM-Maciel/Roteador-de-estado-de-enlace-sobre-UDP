@@ -57,7 +57,7 @@ class Icmp:
 
 # ------------------------------------------------------------------ validacao
 
-def _endereco_valido(texto):
+def endereco_valido(texto):
     """Quatro octetos decimais de 0 a 255. Validamos o formato para nao deixar
     lixo entrar na LSDB, mas sem exigir que seja 10.G.R.1 -- o roteador do
     outro grupo tem outro G, e na interoperabilidade isso tem que passar."""
@@ -120,7 +120,7 @@ def parse(texto):
 
 
 def _parse_hello(resto):
-    if not _endereco_valido(resto):
+    if not endereco_valido(resto):
         return None
     return Hello(resto)
 
@@ -130,7 +130,7 @@ def _parse_lsp(resto):
     if len(partes) != 3:
         return None
     origem, seq_txt, lista = partes
-    if not _endereco_valido(origem):
+    if not endereco_valido(origem):
         return None
     seq = _inteiro(seq_txt)
     if seq is None:
@@ -154,7 +154,7 @@ def _parse_lista_vizinhos(lista):
         if not par:
             continue                    # tolera ';' sobrando no fim
         endereco, sep, custo_txt = par.partition("=")
-        if not sep or not _endereco_valido(endereco):
+        if not sep or not endereco_valido(endereco):
             return None
         custo = _inteiro(custo_txt, minimo=1)      # enunciado: inteiro positivo
         if custo is None:
@@ -171,7 +171,7 @@ def _parse_dados(resto):
     if len(partes) != 5:
         return None
     origem, destino, ttl_txt, id_txt, mensagem = partes
-    if not _endereco_valido(origem) or not _endereco_valido(destino):
+    if not endereco_valido(origem) or not endereco_valido(destino):
         return None
     ttl = _inteiro(ttl_txt, maximo=255)
     ident = _inteiro(id_txt)
@@ -187,7 +187,7 @@ def _parse_icmp(resto):
     if len(partes) != 5:
         return None
     origem, destino, ttl_txt, id_txt, tipo_txt = partes
-    if not _endereco_valido(origem) or not _endereco_valido(destino):
+    if not endereco_valido(origem) or not endereco_valido(destino):
         return None
     ttl = _inteiro(ttl_txt, maximo=255)
     ident = _inteiro(id_txt)

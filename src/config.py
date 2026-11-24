@@ -10,6 +10,7 @@ apresentar -- sem indentacao significativa, sem aspas, sem virgula faltando.
     vizinho <endereco virtual> <ip real> <porta> <custo>
 """
 
+import socket
 from dataclasses import dataclass, field
 
 from constantes import PORTA_PADRAO
@@ -58,8 +59,17 @@ def ler(caminho):
             elif chave == "porta" and len(campos) == 2:
                 porta = int(campos[1])
             elif chave == "vizinho" and len(campos) == 5:
-                vizinhos.append(Vizinho(campos[1], campos[2],
-                                        int(campos[3]), int(campos[4])))
+                # Resolve para IP numerico: e o que o recvfrom devolve, e o filtro
+                # de origem compara por igualdade ("localhost" != "127.0.0.1").
+                # Tambem aborta a subida se o IP ficou "PREENCHER".
+                try:
+                    ip = socket.gethostbyname(campos[2])
+                except OSError:
+                    raise ValueError(f"{caminho}:{n}: IP invalido: {campos[2]!r}")
+                custo = int(campos[4])
+                if custo < 1:
+                    raise ValueError(f"{caminho}:{n}: custo deve ser inteiro positivo")
+                vizinhos.append(Vizinho(campos[1], ip, int(campos[3]), custo))
             else:
                 raise ValueError(f"{caminho}:{n}: linha invalida: {linha!r}")
 
