@@ -1,26 +1,3 @@
-"""Camada 4 -- encaminhamento, DADOS e ICMP.  (criterios 4 e 5, 25% somados)
-
-Com a tabela pronta, encaminhar e mecanico. O que nao e mecanico sao tres
-regras finas, e e nelas que a banca bate:
-
-ARMADILHA 1 -- o TTL so e decrementado no caminho de ENCAMINHAMENTO.
-  Pacote cujo destino e a NOSSA rede e entregue mesmo com TTL 1. E por isso que
-  o ping com TTL crescente revela um roteador a cada incremento: o TTL zera no
-  roteador seguinte do caminho, nunca em quem deveria responder.
-
-ARMADILHA 2 -- nunca gerar erro (tipo 11 ou 3) em resposta a outra mensagem de
-  erro. Evita tempestade: um ICMP 11 que se perde geraria outro ICMP 11, e
-  assim por diante. Regra identica a do ICMP real.
-
-ARMADILHA 3 -- na resposta de eco, a origem e QUEM FOI PINGADO, isto e, o
-  endereco de DESTINO do pedido -- nao o nosso endereco. Se alguem pingar
-  10.7.1.50, a resposta sai de 10.7.1.50, porque o roteador representa toda a
-  sua /24.
-
-Mensagens de erro geradas por nos usam: origem = nosso endereco, TTL = 16, e o
-id do pacote que as provocou.
-"""
-
 import time
 
 import dijkstra
@@ -45,14 +22,11 @@ class Encaminhador:
         self._enviar = enviar
         self._obter_tabela = obter_tabela
         self._proximo_id = 1
-        self.pings = {}          # {id: (destino, instante monotonic)}
-
-    # ----------------------------------------------------------- originacao
+        self.pings = {}
 
     def originar_dados(self, destino, mensagem):
         if not pacotes.mensagem_valida(mensagem):
-            print("mensagem invalida: nao pode conter ':' nem acento "
-                  "(o enunciado define isso como malformado)")
+            print("mensagem invalida: nao pode conter ':' nem acento")
             return
         if self._e_para_mim(destino):
             print(f"[DADOS] de {self.cfg.endereco} para {destino}: {mensagem}")
@@ -60,7 +34,7 @@ class Encaminhador:
         ident = self._novo_id()
         texto = pacotes.monta_dados(self.cfg.endereco, destino,
                                     TTL_INICIAL, ident, mensagem)
-        self._originar(texto, destino, f"DADOS id {ident}")
+        self._originar(texto, destino, f"DADOS id {ident} ttl {TTL_INICIAL}")
 
     def originar_ping(self, destino, ttl):
         if self._e_para_mim(destino):
@@ -73,8 +47,6 @@ class Encaminhador:
             self.pings[ident] = (destino, time.monotonic())
 
     def _originar(self, texto, destino, descricao):
-        """Consulta a tabela. Sem rota: avisa o usuario e NAO envia nada --
-        e a regra do enunciado para pacote originado aqui."""
         rota = self._rota(destino)
         if rota is None:
             print(f"destino inalcancavel: sem rota para {dijkstra.rede_de(destino)}")
@@ -82,18 +54,14 @@ class Encaminhador:
         salto, _ = rota
         if not self._entregar_ao_salto(texto, salto):
             return False
-        log("FWD", f"originado {descricao} para {destino} "
-                   f"-- proximo salto {salto}")
+        log("FWD", f"originado {descricao} para {destino} -- proximo salto {salto}")
         return True
-
-    # ----------------------------------------------------------- recepcao
 
     def ao_receber(self, pacote, ip, porta):
         if self._e_para_mim(pacote.destino):
             self._entregar_local(pacote)
             return
 
-        # Destino em outra rede: AGORA sim o TTL e decrementado.
         ttl = pacote.ttl - 1
         if ttl <= 0:
             log("FWD", f"descartado: TTL zerou em {type(pacote).__name__} "
@@ -120,16 +88,14 @@ class Encaminhador:
             return
 
         if pacote.tipo == ICMP_PEDIDO_ECO:
-            # Armadilha 3: a origem da resposta e quem foi pingado.
             texto = pacotes.monta_icmp(pacote.destino, pacote.origem,
-                                       TTL_INICIAL, pacote.ident,
-                                       ICMP_RESPOSTA_ECO)
+                                       TTL_INICIAL, pacote.ident, ICMP_RESPOSTA_ECO)
             log("ICMP", f"gerada resposta de eco id {pacote.ident} "
                         f"de {pacote.destino} para {pacote.origem}")
-            self._originar(texto, pacote.origem, f"ICMP resposta de eco id {pacote.ident}")
+            self._originar(texto, pacote.origem,
+                           f"ICMP resposta de eco id {pacote.ident} ttl {TTL_INICIAL}")
             return
 
-        # Tipos 0, 11 e 3: resultado para o usuario.
         pendente = self.pings.pop(pacote.ident, None)
         if pendente is not None:
             rtt = (time.monotonic() - pendente[1]) * 1000
@@ -139,10 +105,7 @@ class Encaminhador:
             print(f"ICMP de {pacote.origem}: {NOME_ICMP[pacote.tipo]} "
                   f"(id {pacote.ident}, sem pedido pendente)")
 
-    # -------------------------------------------------------------- erros
-
     def _erro(self, tipo, causador):
-        """Armadilha 2: nunca erro em resposta a erro."""
         if isinstance(causador, pacotes.Icmp) and causador.tipo in ICMP_TIPOS_ERRO:
             log("ICMP", f"suprimido: nao se gera {NOME_ICMP[tipo]} em resposta a "
                         f"{NOME_ICMP[causador.tipo]}")
@@ -158,8 +121,6 @@ class Encaminhador:
             return
         self._entregar_ao_salto(texto, rota[0])
 
-    # ------------------------------------------------------------- pings
-
     def expirar_pings(self):
         agora = time.monotonic()
         for ident in [i for i, (_, t) in self.pings.items()
@@ -167,8 +128,6 @@ class Encaminhador:
             destino, _ = self.pings.pop(ident)
             print(f"timeout: sem resposta de {destino} em {TIMEOUT_PING}s "
                   f"(id {ident})")
-
-    # -------------------------------------------------------------- apoio
 
     def _e_para_mim(self, destino):
         return dijkstra.rede_de(destino) == self.cfg.rede

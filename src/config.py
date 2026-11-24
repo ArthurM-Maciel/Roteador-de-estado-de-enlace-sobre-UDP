@@ -1,15 +1,3 @@
-"""Leitura do arquivo de configuracao.
-
-O formato e livre pelo enunciado. Escolhemos texto simples, uma diretiva por
-linha, porque vai ser editado as pressas num notebook estranho minutos antes de
-apresentar -- sem indentacao significativa, sem aspas, sem virgula faltando.
-
-    # comentarios comecam com #
-    endereco 10.7.1.1
-    porta 6000
-    vizinho <endereco virtual> <ip real> <porta> <custo>
-"""
-
 import socket
 from dataclasses import dataclass, field
 
@@ -18,30 +6,25 @@ from constantes import PORTA_PADRAO
 
 @dataclass
 class Vizinho:
-    """Um vizinho CONFIGURADO. Estar aqui nao significa estar ativo --
-    quem diz isso e o HELLO."""
-    endereco: str       # endereco virtual, ex. 10.7.2.1
-    ip: str             # IP real na rede local
+    endereco: str
+    ip: str
     porta: int
     custo: int
 
 
 @dataclass
 class Config:
-    endereco: str                           # nosso endereco virtual, 10.G.R.1
+    endereco: str
     porta: int = PORTA_PADRAO
     vizinhos: list = field(default_factory=list)
 
     @property
     def rede(self):
-        """Nossa rede /24. Todo pacote para ela e entregue a nos."""
         a, b, c, _ = self.endereco.split(".")
         return f"{a}.{b}.{c}.0/24"
 
 
 def ler(caminho):
-    """Le o arquivo e devolve um Config. Erro de formato aborta a subida --
-    melhor nao subir do que subir torto."""
     endereco = None
     porta = PORTA_PADRAO
     vizinhos = []
@@ -59,9 +42,6 @@ def ler(caminho):
             elif chave == "porta" and len(campos) == 2:
                 porta = int(campos[1])
             elif chave == "vizinho" and len(campos) == 5:
-                # Resolve para IP numerico: e o que o recvfrom devolve, e o filtro
-                # de origem compara por igualdade ("localhost" != "127.0.0.1").
-                # Tambem aborta a subida se o IP ficou "PREENCHER".
                 try:
                     ip = socket.gethostbyname(campos[2])
                 except OSError:

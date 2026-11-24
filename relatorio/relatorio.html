@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Relatório — Roteador de estado de enlace sobre UDP — Grupo 7</title>
+<style>
+  @page { size: A4; margin: 25mm 22mm; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 11.5pt; line-height: 1.4; color: #000; }
+  .titulo { text-align: center; margin-bottom: 18px; }
+  .titulo h1 { font-size: 17pt; margin: 0 0 6px; font-weight: bold; }
+  .titulo p { margin: 2px 0; }
+  h2 { font-size: 13pt; margin: 20px 0 6px; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 12px 0 4px; page-break-after: avoid; }
+  p { margin: 5px 0; text-align: justify; }
+  table { border-collapse: collapse; margin: 8px auto; page-break-inside: avoid; }
+  th, td { border: 1px solid #000; padding: 2px 8px; text-align: left; vertical-align: top; }
+  th { font-weight: bold; }
+  table.peq { font-size: 8.5pt; }
+  table.peq td { white-space: nowrap; }
+  table.peq th, table.peq td { padding: 1px 4px; }
+  code, pre { font-family: "Courier New", monospace; font-size: 10pt; }
+  pre { border: 1px solid #000; padding: 6px 8px; white-space: pre-wrap; page-break-inside: avoid; }
+  .fig { text-align: center; margin: 10px 0 2px; page-break-inside: avoid; }
+  .fig img { max-width: 100%; }
+  .legenda { text-align: center; font-size: 10pt; margin: 2px 0 10px; }
+  ul, ol { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<div class="titulo">
+<h1>Trabalho Final — Roteador de estado de enlace sobre UDP</h1>
+<p>Fundamentos de Redes de Computadores</p>
+<p>Grupo 7: Arthur (R1), Samuel (R2), Lucas (R3) e Anthony (R4)</p>
+</div>
+
+<h2>1. Ambiente de teste</h2>
+
+<p>O roteador foi implementado em Python 3 com sockets UDP, usando um único socket por roteador. O Dijkstra foi escrito pelo
+grupo, usando apenas o <code>heapq</code> da biblioteca padrão.</p>
+
+<p>Os experimentos das questões 1 a 3 foram feitos em uma única máquina (Windows 10), com cinco roteadores em 127.0.0.1, nas
+portas 6001 a 6005 (arquivos <code>config/teste/t1.conf</code> a <code>t5.conf</code>). As capturas foram feitas com o
+<code>tshark</code>, a versão de linha de comando do Wireshark, na interface de loopback, com o filtro
+<code>udp portrange 6001-6005</code>. Também foi feito um teste em rede real com duas máquinas (seção 9).</p>
+
+<h2>2. Topologia de teste</h2>
+
+<div class="fig"><img src="img/topologia.png" alt="Topologia de teste" style="width:75%"></div>
+<div class="legenda">Figura 1 — Topologia de teste: 5 roteadores e custos dos enlaces.</div>
+
+<table>
+<tr><th>Enlace</th><td>R1–R2</td><td>R1–R3</td><td>R2–R3</td><td>R2–R4</td><td>R3–R4</td><td>R4–R5</td><td>R3–R5</td></tr>
+<tr><th>Custo</th><td>2</td><td>5</td><td>1</td><td>4</td><td>2</td><td>3</td><td>8</td></tr>
+</table>
+
+<p>Existem caminhos alternativos. Por exemplo, de R1 até R5: R1-R2-R3-R4-R5 (custo 8, o menor), R1-R2-R4-R5 (9),
+R1-R3-R4-R5 (10), R1-R2-R3-R5 (11) e R1-R3-R5 (13).</p>
+
+<h2>3. Questão 1 — Dijkstra</h2>
+
+<p>LSDB do R1, obtida pelo comando <code>lsdb</code> (Figura 2):</p>
+
+<table>
+<tr><th>Origem</th><th>Seq.</th><th>Vizinhos (custo)</th></tr>
+<tr><td>10.7.1.1 (R1)</td><td>1795525685</td><td>R2=2, R3=5</td></tr>
+<tr><td>10.7.2.1 (R2)</td><td>1795525694</td><td>R1=2, R3=1, R4=4</td></tr>
+<tr><td>10.7.3.1 (R3)</td><td>1795525703</td><td>R1=5, R2=1, R4=2, R5=8</td></tr>
+<tr><td>10.7.4.1 (R4)</td><td>1795525712</td><td>R2=4, R3=2, R5=3</td></tr>
+<tr><td>10.7.5.1 (R5)</td><td>1795525718</td><td>R3=8, R4=3</td></tr>
+</table>
+
+<p>Execução do algoritmo a partir do R1. N' é o conjunto de nós já definidos; D(v) é o custo do melhor caminho conhecido
+até v, e p(v) é o predecessor. O valor marcado com * se torna definitivo naquele passo.</p>
+
+<table>
+<tr><th>Passo</th><th>N'</th><th>D(R2), p</th><th>D(R3), p</th><th>D(R4), p</th><th>D(R5), p</th></tr>
+<tr><td>0</td><td>R1</td><td>2, R1</td><td>5, R1</td><td>∞</td><td>∞</td></tr>
+<tr><td>1</td><td>R1, R2</td><td>2, R1 *</td><td>3, R2</td><td>6, R2</td><td>∞</td></tr>
+<tr><td>2</td><td>R1, R2, R3</td><td></td><td>3, R2 *</td><td>5, R3</td><td>11, R3</td></tr>
+<tr><td>3</td><td>R1, R2, R3, R4</td><td></td><td></td><td>5, R3 *</td><td>8, R4</td></tr>
+<tr><td>4</td><td>R1, R2, R3, R4, R5</td><td></td><td></td><td></td><td>8, R4 *</td></tr>
+</table>
+
+<p>Seguindo os predecessores, os caminhos são: R2 por R1→R2; R3 por R1→R2→R3; R4 por R1→R2→R3→R4; e R5 por R1→R2→R3→R4→R5.
+Todos começam pelo R2. A comparação com a tabela exibida pelo programa (comando <code>tabela</code>, Figura 2) mostra que
+os resultados são iguais:</p>
+
+<table>
+<tr><th>Rede de destino</th><th>Próximo salto</th><th>Custo calculado</th><th>Custo no programa</th></tr>
+<tr><td>10.7.2.0/24</td><td>10.7.2.1</td><td>2</td><td>2</td></tr>
+<tr><td>10.7.3.0/24</td><td>10.7.2.1</td><td>3</td><td>3</td></tr>
+<tr><td>10.7.4.0/24</td><td>10.7.2.1</td><td>5</td><td>5</td></tr>
+<tr><td>10.7.5.0/24</td><td>10.7.2.1</td><td>8</td><td>8</td></tr>
+</table>
+
+<div class="fig"><img src="img/tela_r1_estado_normal.png" alt="vizinhos, lsdb e tabela do R1" style="width:95%"></div>
+<div class="legenda">Figura 2 — Saída dos comandos <code>vizinhos</code>, <code>lsdb</code> e <code>tabela</code> no R1.</div>
+
+<h2>4. Questão 2 — Inundação</h2>
+
+<p>Foram feitas duas capturas, cada uma derrubando um roteador. O roteador foi encerrado com <code>sair</code>, que apenas
+fecha o socket sem avisar os vizinhos, o que equivale a uma queda. Foram contados os pacotes LSP desde a primeira detecção da
+queda até o último vizinho atualizar seu LSP. As renovações periódicas de 30 s fora desse intervalo não foram contadas. Os
+descartes foram contados nos logs, nas linhas <code>descartado: copia/antigo</code>. Os pacotes estão listados nos
+Apêndices A e B.</p>
+
+<table>
+<tr><th></th><th>Queda do R3</th><th>Queda do R4</th></tr>
+<tr><td>Arquivo</td><td>queda_r3.pcapng</td><td>queda_r4.pcapng</td></tr>
+<tr><td>Intervalo analisado</td><td>09:57:09.02 – 09:57:09.70</td><td>10:11:14.85 – 10:11:15.76</td></tr>
+<tr><td>Roteadores restantes</td><td>R1, R2, R4, R5 (sem ciclo)</td><td>R1, R2, R3, R5 (com ciclo R1-R2-R3)</td></tr>
+<tr><td>LSPs novos gerados</td><td>4</td><td>3</td></tr>
+<tr><td>Pacotes LSP no intervalo</td><td>18</td><td>18</td></tr>
+<tr><td>Enviados ao roteador que caiu</td><td>6</td><td>3</td></tr>
+<tr><td>Recebidos e aceitos</td><td>12</td><td>9</td></tr>
+<tr><td>Recebidos e descartados como cópia</td><td>0</td><td>6</td></tr>
+</table>
+
+<p><b>Análise.</b> Cada roteador que detecta a queda gera um único LSP novo. Cada roteador repassa esse LSP uma só vez, a
+todos os vizinhos ativos menos o que o enviou. Na queda do R3, os roteadores restantes formam uma linha, então cada LSP passa
+uma vez por cada enlace e não há cópias. Na queda do R4 sobra o ciclo R1-R2-R3: o mesmo LSP chega por dois caminhos, e a
+segunda chegada tem número de sequência igual ao já armazenado, por isso é descartada. Os pacotes enviados ao roteador que
+caiu existem porque os vizinhos só o consideram inativo depois de 20 s sem HELLO.</p>
+
+<p>As Figuras 3 e 4 mostram a captura da queda do R4 no Wireshark, com o filtro <code>frame contains "LSP:"</code>. Os
+quadros 102 a 119 são os LSPs gerados pela queda. Os demais (10 a 90 e 131 a 135) são renovações periódicas de 30 s.
+O roteador de cada pacote é identificado pela porta: R1 = 6001, R2 = 6002, R3 = 6003, R4 = 6004 e R5 = 6005.</p>
+
+<div class="fig"><img src="img/wireshark_lista.png" alt="Lista de LSPs no Wireshark" style="width:78%"></div>
+<div class="legenda">Figura 3 — Pacotes LSP de <code>queda_r4.pcapng</code> no Wireshark.</div>
+
+<div class="fig"><img src="img/wireshark_pacote.png" alt="Conteúdo do quadro 102" style="width:100%"></div>
+<div class="legenda">Figura 4 — Quadro 102: LSP do R5 (porta 6005 para 6003) com o conteúdo
+<code>LSP:10.7.5.1:1795525723:10.7.3.1=8</code>, gerado quando o R5 detectou a queda do R4.</div>
+
+<p><b>Comparação com vetor distância</b> (análise teórica, sem medição). No vetor distância, cada roteador envia aos vizinhos a
+sua tabela inteira de distâncias, e não só os enlaces diretos. Depois de uma queda, a informação se propaga em rodadas: um
+roteador recalcula e anuncia, o vizinho recalcula e anuncia de novo, e cada rodada gera mensagens novas. Com caminhos
+alternativos pode acontecer a contagem até o infinito, que aumenta muito o número de mensagens e o tempo de convergência. No
+estado de enlace, só quem detectou a queda gera mensagem, e cada LSP é repassado no máximo uma vez por roteador.</p>
+
+<h2>5. Questão 3 — Convergência</h2>
+
+<p>Nos dois experimentos, o roteador derrubado estava no menor caminho de R1 até R5 (R1-R2-R3-R4-R5). Depois da queda, o R1
+passou a usar um caminho alternativo: custo 9 sem o R3, e custo 11 sem o R4.</p>
+
+<table>
+<tr><th>Evento</th><th>Queda do R3</th><th>Queda do R4</th></tr>
+<tr><td>Último HELLO enviado pelo roteador (captura)</td><td>09:56:48.975</td><td>10:10:54.765</td></tr>
+<tr><td>Comando <code>sair</code> (log)</td><td>09:56:53.365</td><td>10:10:55.451</td></tr>
+<tr><td>Primeiro vizinho detecta a queda</td><td>09:57:09.023</td><td>10:11:14.853</td></tr>
+<tr><td>Último vizinho detecta a queda</td><td>09:57:09.695</td><td>10:11:15.756</td></tr>
+<tr><td>Tabela do R1 recalculada pela última vez</td><td>09:57:09.696</td><td>10:11:15.757</td></tr>
+</table>
+
+<table>
+<tr><th>Tempo</th><th>Queda do R3</th><th>Queda do R4</th></tr>
+<tr><td>Detecção (do <code>sair</code> à primeira detecção)</td><td>15,7 s</td><td>19,4 s</td></tr>
+<tr><td>Inundação e recálculo (da primeira detecção à tabela final do R1)</td><td>0,67 s</td><td>0,90 s</td></tr>
+<tr><td>Total</td><td>16,3 s</td><td>20,3 s</td></tr>
+</table>
+
+<p><b>Relação com os temporizadores.</b> O HELLO é enviado a cada 5 s, e o vizinho é considerado inativo depois de 20 s sem
+HELLO. Contando a partir do último HELLO enviado, a detecção levou 20,05 s e 20,09 s, ou seja, o próprio timeout. Contando a
+partir da queda, o tempo fica entre 15 s e 20 s, dependendo de quanto tempo antes da queda saiu o último HELLO: 4,4 s antes no
+primeiro experimento e 0,7 s antes no segundo. Quase todo o tempo de convergência é detecção. A inundação e o recálculo
+levaram menos de 1 s.</p>
+
+<p>Quando o R3 foi reiniciado (09:59:21.446), o R1 o viu ativo em 09:59:22.449 e voltou à tabela original em 09:59:24.604,
+3,2 s depois. Isso acontece por causa da sincronização da LSDB com o vizinho novo.</p>
+
+<h2>6. Questão 4 — Números de sequência</h2>
+
+<p>O número de sequência indica qual é o LSP mais recente de cada origem. O roteador só aceita e repassa um LSP com número
+maior que o armazenado; se for igual ou menor, descarta. Isso tem duas funções:</p>
+<ol>
+<li>Impede que o LSP circule para sempre na rede: sem ele, em uma rede com ciclos as cópias nunca parariam (Questão 2).</li>
+<li>Impede que um LSP antigo, atrasado pelo UDP, substitua um mais novo.</li>
+</ol>
+
+<p>Se um roteador reiniciado voltasse a numerar a partir de 0, os outros roteadores ainda teriam o LSP antigo dele, com um
+número maior. Os LSPs novos seriam descartados como antigos, e a rede continuaria usando a topologia antiga desse roteador
+até o LSP antigo envelhecer (90 s sem renovação). Durante esse tempo as rotas para ele poderiam estar erradas. A especificação
+evita isso usando o horário atual (Unix time) como primeiro número. No experimento, o último LSP do R3 antes da queda tinha
+número 1795524735 (quadro 16 de <code>queda_r3.pcapng</code>). Depois de reiniciar, o primeiro LSP do R3 teve número
+1795525161 (log do R3), que é maior, e por isso foi aceito na hora.</p>
+
+<h2>7. Questão 5 — Confiabilidade</h2>
+
+<p>Se um LSP for perdido, o roteador que não o recebeu fica com a LSDB desatualizada e pode calcular rotas erradas por
+algum tempo. Não há confirmação nem retransmissão.</p>
+
+<p>O mecanismo que recupera a LSDB é a <b>renovação periódica</b>: cada roteador gera um novo LSP a cada 30 s, mesmo sem
+mudança, então qualquer perda é corrigida em até 30 s. Na Figura 6, o R4 recebe a renovação do R3 a cada 30 s, com o número
+de sequência aumentando de 1 em 1. Além disso, o envelhecimento é de 90 s, ou 3 renovações, então perder uma ou duas
+renovações não tira o roteador da LSDB. A sincronização com novo vizinho e os caminhos redundantes da inundação também ajudam.
+Não simulamos perda de pacotes; esta resposta é baseada na especificação.</p>
+
+<h2>8. Questão 6 — TTL</h2>
+
+<p>Os roteadores calculam as rotas sobre a mesma topologia só depois que a rede converge. Durante a convergência, cada um
+recebe os LSPs em um momento diferente, e por um tempo eles têm tabelas diferentes entre si. Isso foi observado na queda do R4:
+o R1 teve a rota para 10.7.4.0/24 com custo 5, depois 6, e depois nenhuma rota; o R5 teve custo 10, depois 13, e depois
+nenhuma rota.</p>
+
+<p><b>Exemplo de laço</b> (situação hipotética na topologia de teste). Suponha que o enlace R3–R4 caia, com os dois
+roteadores ainda ligados. Antes da queda, o R2 chega ao R4 por R2→R3→R4 (custo 3). O R3 detecta a queda primeiro e passa a
+chegar ao R4 por R3→R2→R4 (custo 5). Enquanto o LSP novo do R3 não chega ao R2, o R2 continua mandando para o R3 os pacotes
+destinados ao R4. O R3 devolve esses pacotes ao R2, e eles ficam indo e voltando entre os dois. O TTL é decrementado a cada salto, então o
+pacote é descartado depois de no máximo 16 saltos, e o roteador que o descartou envia um ICMP tempo excedido para a origem.</p>
+
+<h2>9. Outros testes</h2>
+
+<p><b>Queda do R4, vista no R1 (Figura 5).</b> A tabela do R1 ficou com 10.7.2.0/24 (custo 2), 10.7.3.0/24 (3) e
+10.7.5.0/24 (11), todas pelo próximo salto 10.7.2.1. O <code>ping 10.7.5.1</code> com TTL 1, 2 e 3 recebeu tempo excedido de
+10.7.2.1, tempo excedido de 10.7.3.1 e resposta de eco de 10.7.5.1. O <code>ping 10.7.4.1</code> retornou destino
+inalcançável. Depois, o LSP do R4 foi removido da LSDB por envelhecimento (10:12:07.932).</p>
+
+<div class="fig"><img src="img/tela_r1_apos_queda_r4.png" alt="tabela e pings no R1" style="width:95%"></div>
+<div class="legenda">Figura 5 — R1 depois da queda do R4.</div>
+
+<p><b>Rede real com duas máquinas.</b> O R3 rodou em um PC com Windows (192.168.15.10) e o R4 em um MacBook (192.168.15.4),
+porta 6000, com enlace de custo 3 (arquivos <code>config/dois_pcs_r3.conf</code> e <code>dois_pcs_r4.conf</code>). Os dois se
+detectaram como vizinhos, trocaram LSPs, o <code>ping</code> teve resposta (RTT de 4,8 ms) e a <code>msg</code> enviada do PC
+apareceu no Mac.</p>
+
+<div class="fig"><img src="img/tela_mac_r4.webp" alt="terminal do Mac (R4)" style="width:95%"></div>
+<div class="legenda">Figura 6 — Terminal do R4 no MacBook.</div>
+
+<p><b>Interoperabilidade:</b> ainda não testada com outro grupo.</p>
+
+<h2 style="page-break-before: always">Apêndice A — Pacotes LSP da queda do R3</h2>
+<p>Fonte: <code>capturas/queda_r3.pcapng</code>.</p>
+<table class='peq'><tr><th>Quadro</th><th>Hora</th><th>Envio</th><th>LSP de</th><th>Seq.</th><th>Vizinhos no LSP</th><th>Situação</th></tr><tr><td>108</td><td>09:57:09.023</td><td>R1 → R2</td><td>10.7.1.1</td><td>1795524702</td><td>10.7.2.1=2</td><td>entregue</td></tr><tr><td>109</td><td>09:57:09.024</td><td>R2 → R3</td><td>10.7.1.1</td><td>1795524702</td><td>10.7.2.1=2</td><td>enviado ao roteador que caiu</td></tr><tr><td>110</td><td>09:57:09.024</td><td>R2 → R4</td><td>10.7.1.1</td><td>1795524702</td><td>10.7.2.1=2</td><td>entregue</td></tr><tr><td>111</td><td>09:57:09.024</td><td>R4 → R3</td><td>10.7.1.1</td><td>1795524702</td><td>10.7.2.1=2</td><td>enviado ao roteador que caiu</td></tr><tr><td>112</td><td>09:57:09.024</td><td>R4 → R5</td><td>10.7.1.1</td><td>1795524702</td><td>10.7.2.1=2</td><td>entregue</td></tr><tr><td>113</td><td>09:57:09.024</td><td>R5 → R3</td><td>10.7.1.1</td><td>1795524702</td><td>10.7.2.1=2</td><td>enviado ao roteador que caiu</td></tr><tr><td>114</td><td>09:57:09.242</td><td>R5 → R4</td><td>10.7.5.1</td><td>1795524743</td><td>10.7.4.1=3</td><td>entregue</td></tr><tr><td>115</td><td>09:57:09.242</td><td>R4 → R2</td><td>10.7.5.1</td><td>1795524743</td><td>10.7.4.1=3</td><td>entregue</td></tr><tr><td>116</td><td>09:57:09.242</td><td>R4 → R3</td><td>10.7.5.1</td><td>1795524743</td><td>10.7.4.1=3</td><td>enviado ao roteador que caiu</td></tr><tr><td>117</td><td>09:57:09.242</td><td>R2 → R1</td><td>10.7.5.1</td><td>1795524743</td><td>10.7.4.1=3</td><td>entregue</td></tr><tr><td>118</td><td>09:57:09.242</td><td>R2 → R3</td><td>10.7.5.1</td><td>1795524743</td><td>10.7.4.1=3</td><td>enviado ao roteador que caiu</td></tr><tr><td>122</td><td>09:57:09.498</td><td>R2 → R1</td><td>10.7.2.1</td><td>1795524732</td><td>10.7.1.1=2, 10.7.4.1=4</td><td>entregue</td></tr><tr><td>123</td><td>09:57:09.498</td><td>R2 → R4</td><td>10.7.2.1</td><td>1795524732</td><td>10.7.1.1=2, 10.7.4.1=4</td><td>entregue</td></tr><tr><td>124</td><td>09:57:09.498</td><td>R4 → R3</td><td>10.7.2.1</td><td>1795524732</td><td>10.7.1.1=2, 10.7.4.1=4</td><td>enviado ao roteador que caiu</td></tr><tr><td>125</td><td>09:57:09.498</td><td>R4 → R5</td><td>10.7.2.1</td><td>1795524732</td><td>10.7.1.1=2, 10.7.4.1=4</td><td>entregue</td></tr><tr><td>126</td><td>09:57:09.695</td><td>R4 → R2</td><td>10.7.4.1</td><td>1795524739</td><td>10.7.2.1=4, 10.7.5.1=3</td><td>entregue</td></tr><tr><td>127</td><td>09:57:09.695</td><td>R4 → R5</td><td>10.7.4.1</td><td>1795524739</td><td>10.7.2.1=4, 10.7.5.1=3</td><td>entregue</td></tr><tr><td>128</td><td>09:57:09.695</td><td>R2 → R1</td><td>10.7.4.1</td><td>1795524739</td><td>10.7.2.1=4, 10.7.5.1=3</td><td>entregue</td></tr></table>
+
+<h2 style="page-break-before: always">Apêndice B — Pacotes LSP da queda do R4</h2>
+<p>Fonte: <code>capturas/queda_r4.pcapng</code>.</p>
+<table class='peq'><tr><th>Quadro</th><th>Hora</th><th>Envio</th><th>LSP de</th><th>Seq.</th><th>Vizinhos no LSP</th><th>Situação</th></tr><tr><td>102</td><td>10:11:14.854</td><td>R5 → R3</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>entregue</td></tr><tr><td>103</td><td>10:11:14.854</td><td>R3 → R1</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>entregue</td></tr><tr><td>104</td><td>10:11:14.854</td><td>R3 → R2</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>entregue</td></tr><tr><td>105</td><td>10:11:14.854</td><td>R3 → R4</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>enviado ao roteador que caiu</td></tr><tr><td>106</td><td>10:11:14.854</td><td>R1 → R2</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>entregue</td></tr><tr><td>107</td><td>10:11:14.854</td><td>R2 → R1</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>entregue</td></tr><tr><td>108</td><td>10:11:14.854</td><td>R2 → R4</td><td>10.7.5.1</td><td>1795525723</td><td>10.7.3.1=8</td><td>enviado ao roteador que caiu</td></tr><tr><td>109</td><td>10:11:15.464</td><td>R3 → R1</td><td>10.7.3.1</td><td>1795525708</td><td>10.7.1.1=5, 10.7.2.1=1, 10.7.5.1=8</td><td>entregue</td></tr><tr><td>110</td><td>10:11:15.464</td><td>R3 → R2</td><td>10.7.3.1</td><td>1795525708</td><td>10.7.1.1=5, 10.7.2.1=1, 10.7.5.1=8</td><td>entregue</td></tr><tr><td>111</td><td>10:11:15.464</td><td>R3 → R5</td><td>10.7.3.1</td><td>1795525708</td><td>10.7.1.1=5, 10.7.2.1=1, 10.7.5.1=8</td><td>entregue</td></tr><tr><td>112</td><td>10:11:15.464</td><td>R1 → R2</td><td>10.7.3.1</td><td>1795525708</td><td>10.7.1.1=5, 10.7.2.1=1, 10.7.5.1=8</td><td>entregue</td></tr><tr><td>113</td><td>10:11:15.464</td><td>R2 → R1</td><td>10.7.3.1</td><td>1795525708</td><td>10.7.1.1=5, 10.7.2.1=1, 10.7.5.1=8</td><td>entregue</td></tr><tr><td>114</td><td>10:11:15.464</td><td>R2 → R4</td><td>10.7.3.1</td><td>1795525708</td><td>10.7.1.1=5, 10.7.2.1=1, 10.7.5.1=8</td><td>enviado ao roteador que caiu</td></tr><tr><td>115</td><td>10:11:15.757</td><td>R2 → R1</td><td>10.7.2.1</td><td>1795525699</td><td>10.7.1.1=2, 10.7.3.1=1</td><td>entregue</td></tr><tr><td>116</td><td>10:11:15.757</td><td>R2 → R3</td><td>10.7.2.1</td><td>1795525699</td><td>10.7.1.1=2, 10.7.3.1=1</td><td>entregue</td></tr><tr><td>117</td><td>10:11:15.757</td><td>R1 → R3</td><td>10.7.2.1</td><td>1795525699</td><td>10.7.1.1=2, 10.7.3.1=1</td><td>entregue</td></tr><tr><td>118</td><td>10:11:15.757</td><td>R3 → R1</td><td>10.7.2.1</td><td>1795525699</td><td>10.7.1.1=2, 10.7.3.1=1</td><td>entregue</td></tr><tr><td>119</td><td>10:11:15.757</td><td>R3 → R5</td><td>10.7.2.1</td><td>1795525699</td><td>10.7.1.1=2, 10.7.3.1=1</td><td>entregue</td></tr></table>
+
+</body>
+</html>
