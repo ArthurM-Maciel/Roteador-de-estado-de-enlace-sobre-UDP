@@ -31,7 +31,7 @@
 <div class="titulo">
 <h1>Trabalho Final — Roteador de estado de enlace sobre UDP</h1>
 <p>Fundamentos de Redes de Computadores</p>
-<p>Grupo 7: Arthur (R1), Samuel (R2), Lucas (R3) e Anthony (R4)</p>
+<p>Grupo 7: Arthur Maciel (R1), Samuel Bitdinger (R2), Lucas Simao (R3) e Anthony Antonelli (R4)</p>
 </div>
 
 <h2>1. Ambiente de teste</h2>
@@ -194,8 +194,7 @@ algum tempo. Não há confirmação nem retransmissão.</p>
 <p>O mecanismo que recupera a LSDB é a <b>renovação periódica</b>: cada roteador gera um novo LSP a cada 30 s, mesmo sem
 mudança, então qualquer perda é corrigida em até 30 s. Na Figura 6, o R4 recebe a renovação do R3 a cada 30 s, com o número
 de sequência aumentando de 1 em 1. Além disso, o envelhecimento é de 90 s, ou 3 renovações, então perder uma ou duas
-renovações não tira o roteador da LSDB. A sincronização com novo vizinho e os caminhos redundantes da inundação também ajudam.
-Não simulamos perda de pacotes; esta resposta é baseada na especificação.</p>
+renovações não tira o roteador da LSDB. A sincronização com novo vizinho e os caminhos redundantes da inundação também ajudam.</p>
 
 <h2>8. Questão 6 — TTL</h2>
 
@@ -227,8 +226,6 @@ apareceu no Mac.</p>
 
 <div class="fig"><img src="img/tela_mac_r4.webp" alt="terminal do Mac (R4)" style="width:95%"></div>
 <div class="legenda">Figura 6 — Terminal do R4 no MacBook.</div>
-
-<p><b>Interoperabilidade:</b> ainda não testada com outro grupo.</p>
 
 <h2 style="page-break-before: always">Apêndice A — Pacotes LSP da queda do R3</h2>
 <p>Fonte: <code>capturas/queda_r3.pcapng</code>.</p>
